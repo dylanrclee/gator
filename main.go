@@ -82,6 +82,19 @@ func handlerRegister(s *state, cmd command) error {
 	return nil
 }
 
+func handlerDeleteAll(s *state, cmd command) error {
+	if len(cmd.arguments) != 0 {
+		return fmt.Errorf("To many arguments provided\n")
+	}
+
+	err := s.db.DeleteAllUsers(context.Background())
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Database was successfully reset\n")
+	return nil
+}
+
 func (c *commands) run(s *state, cmd command) error {
 	value, ok := c.list[cmd.name]
 	if !ok {
@@ -119,6 +132,7 @@ func main() {
 	mcommands.list = make(map[string]func(*state, command) error)
 	mcommands.register("login", handlerLogin)
 	mcommands.register("register", handlerRegister)
+	mcommands.register("reset", handlerDeleteAll)
 
 	userarguments := os.Args
 	if len(userarguments) < 2 {
