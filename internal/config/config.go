@@ -7,6 +7,7 @@ import (
 )
 
 const configFileName = ".gatorconfig.json"
+const Postgresfilepath = "postgres://postgres:postgres@localhost:5432/gator"
 
 type Config struct {
 	Url      string `json:"db_url"`
