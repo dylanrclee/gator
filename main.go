@@ -95,6 +95,21 @@ func handlerDeleteAll(s *state, cmd command) error {
 	return nil
 }
 
+func handlerUsers(s *state, cmd command) error {
+	users, err := s.db.GetUsers(context.Background())
+	if err != nil {
+		return err
+	}
+	for _, user := range users {
+		if user == s.conpointer.Username {
+			fmt.Printf("%s (current)", user)
+		} else {
+			fmt.Printf("%s\n", user)
+		}
+	}
+	return nil
+}
+
 func (c *commands) run(s *state, cmd command) error {
 	value, ok := c.list[cmd.name]
 	if !ok {
@@ -133,6 +148,7 @@ func main() {
 	mcommands.register("login", handlerLogin)
 	mcommands.register("register", handlerRegister)
 	mcommands.register("reset", handlerDeleteAll)
+	mcommands.register("users", handlerUsers)
 
 	userarguments := os.Args
 	if len(userarguments) < 2 {
