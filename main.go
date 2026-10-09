@@ -3,8 +3,12 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/xml"
 	"fmt"
+	"html"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"time"
 
@@ -27,6 +31,21 @@ type command struct {
 
 type commands struct {
 	list map[string]func(*state, command) error
+}
+
+type RSSFeed struct {
+	Channel struct {
+		Title       string    `xml:"title"`
+		Link        string    `xml:"link"`
+		Description string    `xml:"description"`
+		Item        []RSSItem `xml:"item"`
+	} `xml:"channel"`
+}
+type RSSItem struct {
+	Title       string `xml:"title"`
+	Link        string `xml:"link"`
+	Description string `xml:"description"`
+	PubDate     string `xml:"pubDate"`
 }
 
 func handlerLogin(s *state, cmd command) error {
@@ -110,6 +129,15 @@ func handlerUsers(s *state, cmd command) error {
 	return nil
 }
 
+func agg(s *state, cmd command) error {
+	res_feed, err := fetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%+v\n", res_feed)
+	return nil
+}
+
 func (c *commands) run(s *state, cmd command) error {
 	value, ok := c.list[cmd.name]
 	if !ok {
@@ -124,6 +152,43 @@ func (c *commands) run(s *state, cmd command) error {
 
 func (c *commands) register(name string, f func(*state, command) error) {
 	c.list[name] = f
+}
+
+func fetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error) {
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", feedURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "gator")
+
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var res_feed RSSFeed
+	err = xml.Unmarshal(body, &res_feed)
+	if err != nil {
+		return nil, err
+	}
+
+	res_feed.Channel.Title = html.UnescapeString(res_feed.Channel.Title)
+	res_feed.Channel.Description = html.UnescapeString(res_feed.Channel.Description)
+	for _, item := range res_feed.Channel.Item {
+		item.Title = html.UnescapeString(item.Title)
+		item.Description = html.UnescapeString(item.Description)
+	}
+	return &res_feed, err
 }
 
 func main() {
@@ -149,6 +214,7 @@ func main() {
 	mcommands.register("register", handlerRegister)
 	mcommands.register("reset", handlerDeleteAll)
 	mcommands.register("users", handlerUsers)
+	mcommands.register("agg", agg)
 
 	userarguments := os.Args
 	if len(userarguments) < 2 {
