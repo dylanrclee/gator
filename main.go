@@ -29,7 +29,7 @@ type command struct {
 	arguments []string
 }
 
-type commands struct {
+type command_list struct {
 	list map[string]func(*state, command) error
 }
 
@@ -138,7 +138,41 @@ func agg(s *state, cmd command) error {
 	return nil
 }
 
-func (c *commands) run(s *state, cmd command) error {
+func handleraddfeed(s *state, cmd command) error {
+	if len(cmd.arguments) < 2 {
+		return fmt.Errorf("Not enough arguments entered")
+	}
+	currentuser := s.conpointer.Username
+	userinfo, err := s.db.GetUser(context.Background(), currentuser)
+	if err != nil {
+		return err
+	}
+
+	cur_time := time.Now()
+	params := database.CreateFeedsParams{
+		ID:        uuid.New(),
+		CreatedAt: cur_time,
+		UpdatedAt: cur_time,
+		Name:      cmd.arguments[0],
+		Url:       cmd.arguments[1],
+		UserID:    userinfo.ID,
+	}
+
+	feed, err := s.db.CreateFeeds(context.Background(), params)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("ID: %v\n", feed.ID)
+	fmt.Printf("Created At: %v\n", feed.CreatedAt)
+	fmt.Printf("Updated At: %v\n", feed.UpdatedAt)
+	fmt.Printf("Name: %v\n", feed.Name)
+	fmt.Printf("Url: %v\n", feed.Url)
+	fmt.Printf("User ID: %v\n", feed.UserID)
+	return nil
+}
+
+func (c *command_list) run(s *state, cmd command) error {
 	value, ok := c.list[cmd.name]
 	if !ok {
 		return fmt.Errorf("Command not found in command list")
@@ -150,7 +184,7 @@ func (c *commands) run(s *state, cmd command) error {
 	return nil
 }
 
-func (c *commands) register(name string, f func(*state, command) error) {
+func (c *command_list) register(name string, f func(*state, command) error) {
 	c.list[name] = f
 }
 
@@ -208,13 +242,14 @@ func main() {
 	dbQueries := database.New(db)
 	mstate.db = dbQueries
 
-	var mcommands commands
+	var mcommands command_list
 	mcommands.list = make(map[string]func(*state, command) error)
 	mcommands.register("login", handlerLogin)
 	mcommands.register("register", handlerRegister)
 	mcommands.register("reset", handlerDeleteAll)
 	mcommands.register("users", handlerUsers)
 	mcommands.register("agg", agg)
+	mcommands.register("addfeed", handleraddfeed)
 
 	userarguments := os.Args
 	if len(userarguments) < 2 {
