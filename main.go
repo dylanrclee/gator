@@ -172,6 +172,21 @@ func handleraddfeed(s *state, cmd command) error {
 	return nil
 }
 
+func handlerfeeds(s *state, cmd command) error {
+	feeds, err := s.db.GetFeeds(context.Background())
+	if err != nil {
+		return nil
+	}
+
+	for i, feed := range feeds {
+		fmt.Printf("Feed %v\n", i+1)
+		fmt.Printf("Name: %v\n", feed.FeedName)
+		fmt.Printf("URL: %v\n", feed.Url)
+		fmt.Printf("Created by: %v\n\n", feed.UserName)
+	}
+	return nil
+}
+
 func (c *command_list) run(s *state, cmd command) error {
 	value, ok := c.list[cmd.name]
 	if !ok {
@@ -250,6 +265,7 @@ func main() {
 	mcommands.register("users", handlerUsers)
 	mcommands.register("agg", agg)
 	mcommands.register("addfeed", handleraddfeed)
+	mcommands.register("feeds", handlerfeeds)
 
 	userarguments := os.Args
 	if len(userarguments) < 2 {
