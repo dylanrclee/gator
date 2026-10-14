@@ -96,7 +96,7 @@ func handlerRegister(s *state, cmd command) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("User %s was successfully created", cmd.arguments[0])
+	fmt.Printf("User %s was successfully created\n", cmd.arguments[0])
 	log.Printf("%+v", user)
 	return nil
 }
@@ -163,6 +163,11 @@ func handleraddfeed(s *state, cmd command) error {
 		return err
 	}
 
+	_, err = followhelperfunc(s, userinfo, feed)
+	if err != nil {
+		return err
+	}
+
 	fmt.Printf("ID: %v\n", feed.ID)
 	fmt.Printf("Created At: %v\n", feed.CreatedAt)
 	fmt.Printf("Updated At: %v\n", feed.UpdatedAt)
@@ -183,6 +188,47 @@ func handlerfeeds(s *state, cmd command) error {
 		fmt.Printf("Name: %v\n", feed.FeedName)
 		fmt.Printf("URL: %v\n", feed.Url)
 		fmt.Printf("Created by: %v\n\n", feed.UserName)
+	}
+	return nil
+}
+
+func handlerfollow(s *state, cmd command) error {
+	url := cmd.arguments[0]
+
+	current_user := s.conpointer.Username
+	userinfo, err := s.db.GetUser(context.Background(), current_user)
+	if err != nil {
+		return err
+	}
+
+	searched_feed, err := s.db.GetFeed(context.Background(), url)
+	if err != nil {
+		return err
+	}
+	follow, err := followhelperfunc(s, userinfo, searched_feed)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Feed '%v' has been followed by %s\n", follow.FeedName, current_user)
+	return nil
+}
+
+func handlerfollowing(s *state, cmd command) error {
+	current_user := s.conpointer.Username
+	userinfo, err := s.db.GetUser(context.Background(), current_user)
+	if err != nil {
+		return err
+	}
+
+	feeds_followed, err := s.db.GetFeedFollowsForUser(context.Background(), userinfo.ID)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Feeds followed by %s:\n", current_user)
+	for _, followed_feed_name := range feeds_followed {
+		fmt.Printf("%s\n", followed_feed_name)
 	}
 	return nil
 }
@@ -240,6 +286,25 @@ func fetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error) {
 	return &res_feed, err
 }
 
+// Helper functions
+func followhelperfunc(s *state, userinfo database.User, searched_feed database.Feed) (database.CreateFeedFollowRow, error) {
+
+	cur_time := time.Now()
+	params := database.CreateFeedFollowParams{
+		ID:        uuid.New(),
+		CreatedAt: cur_time,
+		UpdatedAt: cur_time,
+		UserID:    userinfo.ID,
+		FeedID:    searched_feed.ID,
+	}
+
+	follow, err := s.db.CreateFeedFollow(context.Background(), params)
+	if err != nil {
+		return follow, err
+	}
+	return follow, nil
+}
+
 func main() {
 	var mstate state
 
@@ -266,6 +331,8 @@ func main() {
 	mcommands.register("agg", agg)
 	mcommands.register("addfeed", handleraddfeed)
 	mcommands.register("feeds", handlerfeeds)
+	mcommands.register("follow", handlerfollow)
+	mcommands.register("following", handlerfollowing)
 
 	userarguments := os.Args
 	if len(userarguments) < 2 {
