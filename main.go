@@ -48,6 +48,16 @@ type RSSItem struct {
 	PubDate     string `xml:"pubDate"`
 }
 
+func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) error) func(*state, command) error {
+	return func(s *state, cmd command) error {
+		userinfo, err := s.db.GetUser(context.Background(), s.conpointer.Username)
+		if err != nil {
+			return err
+		}
+		return handler(s, cmd, userinfo)
+	}
+}
+
 func handlerLogin(s *state, cmd command) error {
 	if len(cmd.arguments) == 0 {
 		return fmt.Errorf("No arguments provided\n")
@@ -138,14 +148,9 @@ func agg(s *state, cmd command) error {
 	return nil
 }
 
-func handleraddfeed(s *state, cmd command) error {
+func handleraddfeed(s *state, cmd command, user database.User) error {
 	if len(cmd.arguments) < 2 {
 		return fmt.Errorf("Not enough arguments entered")
-	}
-	currentuser := s.conpointer.Username
-	userinfo, err := s.db.GetUser(context.Background(), currentuser)
-	if err != nil {
-		return err
 	}
 
 	cur_time := time.Now()
@@ -155,7 +160,7 @@ func handleraddfeed(s *state, cmd command) error {
 		UpdatedAt: cur_time,
 		Name:      cmd.arguments[0],
 		Url:       cmd.arguments[1],
-		UserID:    userinfo.ID,
+		UserID:    user.ID,
 	}
 
 	feed, err := s.db.CreateFeeds(context.Background(), params)
@@ -163,7 +168,7 @@ func handleraddfeed(s *state, cmd command) error {
 		return err
 	}
 
-	_, err = followhelperfunc(s, userinfo, feed)
+	_, err = followhelperfunc(s, user, feed)
 	if err != nil {
 		return err
 	}
@@ -192,41 +197,29 @@ func handlerfeeds(s *state, cmd command) error {
 	return nil
 }
 
-func handlerfollow(s *state, cmd command) error {
+func handlerfollow(s *state, cmd command, user database.User) error {
 	url := cmd.arguments[0]
-
-	current_user := s.conpointer.Username
-	userinfo, err := s.db.GetUser(context.Background(), current_user)
-	if err != nil {
-		return err
-	}
 
 	searched_feed, err := s.db.GetFeed(context.Background(), url)
 	if err != nil {
 		return err
 	}
-	follow, err := followhelperfunc(s, userinfo, searched_feed)
+	follow, err := followhelperfunc(s, user, searched_feed)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Feed '%v' has been followed by %s\n", follow.FeedName, current_user)
+	fmt.Printf("Feed '%v' has been followed by %s\n", follow.FeedName, s.conpointer.Username)
 	return nil
 }
 
-func handlerfollowing(s *state, cmd command) error {
-	current_user := s.conpointer.Username
-	userinfo, err := s.db.GetUser(context.Background(), current_user)
+func handlerfollowing(s *state, cmd command, user database.User) error {
+	feeds_followed, err := s.db.GetFeedFollowsForUser(context.Background(), user.ID)
 	if err != nil {
 		return err
 	}
 
-	feeds_followed, err := s.db.GetFeedFollowsForUser(context.Background(), userinfo.ID)
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("Feeds followed by %s:\n", current_user)
+	fmt.Printf("Feeds followed by %s:\n", s.conpointer.Username)
 	for _, followed_feed_name := range feeds_followed {
 		fmt.Printf("%s\n", followed_feed_name)
 	}
@@ -329,10 +322,10 @@ func main() {
 	mcommands.register("reset", handlerDeleteAll)
 	mcommands.register("users", handlerUsers)
 	mcommands.register("agg", agg)
-	mcommands.register("addfeed", handleraddfeed)
+	mcommands.register("addfeed", middlewareLoggedIn(handleraddfeed))
 	mcommands.register("feeds", handlerfeeds)
-	mcommands.register("follow", handlerfollow)
-	mcommands.register("following", handlerfollowing)
+	mcommands.register("follow", middlewareLoggedIn(handlerfollow))
+	mcommands.register("following", middlewareLoggedIn(handlerfollowing))
 
 	userarguments := os.Args
 	if len(userarguments) < 2 {
