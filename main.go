@@ -140,12 +140,23 @@ func handlerUsers(s *state, cmd command) error {
 }
 
 func agg(s *state, cmd command) error {
-	res_feed, err := fetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
+	if len(cmd.arguments) != 1 {
+		return fmt.Errorf("To many arguments provided\n")
+	}
+	if len(cmd.arguments[0]) != 2 {
+		return fmt.Errorf("Incorrect formatting for time entered\n")
+	}
+
+	time_between_reqs, err := time.ParseDuration(cmd.arguments[0])
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%+v\n", res_feed)
-	return nil
+
+	fmt.Printf("Collecting feeds every %s0s\n", cmd.arguments[0])
+	ticker := time.NewTicker(time_between_reqs)
+	for ; ; <-ticker.C {
+		scrapeFeeds(s)
+	}
 }
 
 func handleraddfeed(s *state, cmd command, user database.User) error {
@@ -297,6 +308,36 @@ func fetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error) {
 		item.Description = html.UnescapeString(item.Description)
 	}
 	return &res_feed, err
+}
+
+func scrapeFeeds(s *state) error {
+	feed, err := s.db.GetNextFeedToFetch(context.Background())
+	if err != nil {
+		return err
+	}
+
+	cur_time := time.Now()
+	params := database.MarkFeedFetchedParams{
+		LastFetchedAt: sql.NullTime{
+			Time:  cur_time,
+			Valid: true,
+		},
+		ID: feed.ID,
+	}
+
+	marked_feed, err := s.db.MarkFeedFetched(context.Background(), params)
+	if err != nil {
+		return err
+	}
+	res_feed, err := fetchFeed(context.Background(), marked_feed.Url)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Feed Titles:\n")
+	for _, item := range res_feed.Channel.Item {
+		fmt.Printf("%s\n", item.Title)
+	}
+	return nil
 }
 
 // Helper functions
