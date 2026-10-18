@@ -226,6 +226,26 @@ func handlerfollowing(s *state, cmd command, user database.User) error {
 	return nil
 }
 
+func handlerdeletefollow(s *state, cmd command, user database.User) error {
+	feedinfo, err := s.db.GetFeed(context.Background(), cmd.arguments[0])
+	if err != nil {
+		return err
+	}
+
+	params := database.DeleteFollowRecordParams{
+		UserID: user.ID,
+		FeedID: feedinfo.ID,
+	}
+
+	err = s.db.DeleteFollowRecord(context.Background(), params)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("'%s' has been unfollowed by %s\n", feedinfo.Name, user.Name)
+	return nil
+}
+
 func (c *command_list) run(s *state, cmd command) error {
 	value, ok := c.list[cmd.name]
 	if !ok {
@@ -326,6 +346,7 @@ func main() {
 	mcommands.register("feeds", handlerfeeds)
 	mcommands.register("follow", middlewareLoggedIn(handlerfollow))
 	mcommands.register("following", middlewareLoggedIn(handlerfollowing))
+	mcommands.register("unfollow", middlewareLoggedIn(handlerdeletefollow))
 
 	userarguments := os.Args
 	if len(userarguments) < 2 {
