@@ -10,6 +10,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -141,7 +143,7 @@ func handlerUsers(s *state, cmd command) error {
 
 func agg(s *state, cmd command) error {
 	if len(cmd.arguments) != 1 {
-		return fmt.Errorf("To many arguments provided\n")
+		return fmt.Errorf("Incorrect arguments provided\n")
 	}
 	if len(cmd.arguments[0]) != 2 {
 		return fmt.Errorf("Incorrect formatting for time entered\n")
@@ -233,6 +235,33 @@ func handlerfollowing(s *state, cmd command, user database.User) error {
 	fmt.Printf("Feeds followed by %s:\n", s.conpointer.Username)
 	for _, followed_feed_name := range feeds_followed {
 		fmt.Printf("%s\n", followed_feed_name)
+	}
+	return nil
+}
+
+func handlerbrowse(s *state, cmd command, user database.User) error {
+	if len(cmd.arguments) >= 2 {
+		return fmt.Errorf("Too many arguments provided for browse command")
+	}
+	browse_num := 2
+	var err error
+	if len(cmd.arguments) == 1 {
+		browse_num, err = strconv.Atoi(cmd.arguments[0])
+	}
+	if err != nil {
+		return err
+	}
+
+	posts, err := s.db.GetPostsForUser(context.Background(), user.ID)
+	if err != nil {
+		return err
+	}
+
+	for i := 0; i < len(posts) && i < browse_num; i++ {
+		fmt.Printf("Post %v\n", i+1)
+		fmt.Printf("ID: %v\n", posts[i].ID)
+		fmt.Printf("Title: %v\n", posts[i].Title)
+		fmt.Printf("URL: %v\n\n", posts[i].Url)
 	}
 	return nil
 }
@@ -333,9 +362,37 @@ func scrapeFeeds(s *state) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Feed Titles:\n")
+
 	for _, item := range res_feed.Channel.Item {
-		fmt.Printf("%s\n", item.Title)
+		pub_time_struct := sql.NullTime{}
+
+		parsed_pub_time, err := time.Parse("layout", item.PubDate)
+		if err != nil {
+			pub_time_struct.Valid = false
+		}
+		if err == nil {
+			pub_time_struct.Time = parsed_pub_time
+			pub_time_struct.Valid = true
+		}
+
+		post_params := database.CreatePostParams{
+			ID:        uuid.New(),
+			CreatedAt: cur_time,
+			UpdatedAt: cur_time,
+			Title:     item.Title,
+			Url:       item.Link,
+			Description: sql.NullString{
+				String: item.Description,
+				Valid:  true},
+			PublishedAt: pub_time_struct,
+			FeedID:      marked_feed.ID,
+		}
+		_, err = s.db.CreatePost(context.Background(), post_params)
+		if err != nil {
+			if !strings.Contains(err.Error(), "duplicate key value violates unique constraint") {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -388,6 +445,7 @@ func main() {
 	mcommands.register("follow", middlewareLoggedIn(handlerfollow))
 	mcommands.register("following", middlewareLoggedIn(handlerfollowing))
 	mcommands.register("unfollow", middlewareLoggedIn(handlerdeletefollow))
+	mcommands.register("browse", middlewareLoggedIn(handlerbrowse))
 
 	userarguments := os.Args
 	if len(userarguments) < 2 {
